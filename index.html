@@ -120,6 +120,22 @@ textarea:focus-visible{outline:none;border-color:var(--danger)}
 .btn.danger{background:var(--danger);border-color:var(--danger);color:var(--accent-ink)}
 .linkish{background:none;border:0;padding:0;color:var(--muted);font-size:14px;font-weight:600;text-decoration:underline;text-underline-offset:3px}
 .linkish:hover{color:var(--danger)}
+select{font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:6px;padding:10px 12px;width:100%;min-width:0}
+select:focus-visible{outline:none;border-color:var(--danger)}
+dialog.fixes{border:2px solid var(--ink);border-radius:12px;padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:var(--surface);color:var(--ink)}
+dialog.fixes::backdrop{background:rgba(17,19,23,.6)}
+.dlg{display:flex;flex-direction:column;gap:14px;padding:22px 22px 20px;max-height:calc(100vh - 52px);overflow:auto}
+.dlg h3{margin:0;font-family:var(--display);font-weight:800;font-size:28px;line-height:1.05;text-transform:uppercase}
+.dlg .lede{margin:0;font-size:15px;color:var(--muted)}
+.dlg.safety h3{color:var(--danger)}
+.steps{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border:2px solid var(--line);border-radius:8px;cursor:pointer;text-transform:none;letter-spacing:normal;font-weight:400;color:var(--ink)}
+.step:has(input:checked){border-color:var(--ok);background:var(--ok-soft)}
+.step input{width:22px;height:22px;margin:1px 0 0;accent-color:var(--ok);cursor:pointer}
+.step b{display:block;font-size:16px;line-height:1.3}
+.step small{display:block;margin-top:3px;font-size:14px;line-height:1.4;color:var(--muted)}
+.dlg-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-items:center}
+.dlg-actions .count{margin-right:auto;font-size:14px;font-weight:600;color:var(--muted)}
 @media (prefers-reduced-motion:no-preference){.bar span{transition:width .6s ease}}
 </style>
 <style>body{margin:0}</style>
@@ -180,12 +196,25 @@ textarea:focus-visible{outline:none;border-color:var(--danger)}
         <h2 id="reportTitle">Report a problem</h2>
         <p class="qsub" id="reportDownNote" style="margin:0" hidden>This printer is already marked out of service. Once it's working again, anyone can click “Mark as fixed” on the left.</p>
         <form id="report" novalidate>
-          <div class="field"><label for="r-reason">What's wrong?</label><textarea id="r-reason" rows="3" maxlength="200" placeholder="e.g. nozzle clogged, bed won't heat, error on the screen"></textarea></div>
+          <div class="field"><label for="r-type">Type of problem</label>
+            <select id="r-type">
+              <option value="">Choose one…</option>
+              <option value="adhesion">Print won't stick / comes loose from the bed</option>
+              <option value="extrusion">Nothing (or too little) comes out of the nozzle</option>
+              <option value="error">Error message on the printer screen</option>
+              <option value="file">File won't start or printer won't connect</option>
+              <option value="quality">Bad print quality (stringing, layer shifts, gaps)</option>
+              <option value="other">Something else (noise, broken or loose part)</option>
+              <option value="safety">Safety: smoke, burning smell, sparks or melted parts</option>
+            </select>
+          </div>
+          <div class="field"><label for="r-reason">Describe what's happening</label><textarea id="r-reason" rows="3" maxlength="150" placeholder="e.g. bed won't heat past 40 °C, error E3 on screen"></textarea></div>
           <div class="field"><label for="r-name">Your name</label><input type="text" id="r-name" autocomplete="name" maxlength="60"></div>
           <button class="btn danger" type="submit" id="reportBtn" disabled>Mark out of service</button>
           <div class="msg" id="reportMsg" role="status"></div>
         </form>
       </section>
+      <dialog class="fixes" id="fixDialog" aria-labelledby="fixTitle"><div class="dlg" id="fixBody"></div></dialog>
       <p class="qsub" style="margin:0">Updates every 15 seconds. Your email is shown on the queue. Company and PO details go only to lab staff.</p>
     </div>
   </div>
@@ -292,7 +321,7 @@ textarea:focus-visible{outline:none;border-color:var(--danger)}
       ));
       if (!c) return;
     }
-    const reportLink = p.down ? null : h('button',{class:'linkish', type:'button', onclick: () => { const r = $('r-reason'); r.scrollIntoView({behavior:'smooth', block:'center'}); r.focus({preventScroll:true}); }}, 'Something wrong with this printer? Report a problem');
+    const reportLink = p.down ? null : h('button',{class:'linkish', type:'button', onclick: () => { const r = $('r-type'); r.scrollIntoView({behavior:'smooth', block:'center'}); r.focus({preventScroll:true}); }}, 'Something wrong with this printer? Report a problem');
     if (!c){
       const q = queueFor(p.id);
       box.append(h('div',{class:'idle'}, h('strong',null,'Free'), h('span',{class:'empty'}, q.length ? q[0].name + ' is next in line and can start now.' : 'Nobody is using this printer. Sign up to start.')), reportLink);
@@ -421,22 +450,113 @@ textarea:focus-visible{outline:none;border-color:var(--danger)}
     S.busy = false; render();
   });
 
-  $('report').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const p = selPrinter(); if (!p || S.busy) return;
-    const m = $('reportMsg');
-    const say = (t, k) => { m.textContent = t; m.className = 'msg ' + (k || ''); };
-    const report = { reason: $('r-reason').value.trim(), name: $('r-name').value.trim(), contact: $('f-contact').value.trim() };
-    if (!report.reason) return say('Describe what\'s wrong with the printer.', 'err');
-    if (!report.name) return say('Enter your name so staff can follow up.', 'err');
-    S.busy = true; say('Saving…'); render();
+  // Basic fixes students must confirm before a printer can be marked out of service.
+  // Edit these lists to match your lab's printers and procedures.
+  const FIXES = {
+    adhesion: { label: 'Won\'t stick', steps: [
+      ['Cleaned the build plate', 'Wiped it with isopropyl alcohol (IPA) and a lint-free cloth. Fingerprint oils are the #1 cause.'],
+      ['Used the right plate and adhesive for the material', 'For example, glue stick for PETG on smooth PEI so it doesn\'t fuse to the plate.'],
+      ['Re-ran bed leveling / Z-offset calibration', 'From the printer menu (Calibration → Auto bed level, or Live adjust Z during the first layer).'],
+      ['Checked bed temperature in the slicer', 'For example, PLA around 55–60 °C, PETG around 70–85 °C.'],
+      ['Cleaned plastic off the nozzle tip', 'With the nozzle heated, wipe it with the brass brush. A blob on the tip drags the first layer off the bed.']
+    ]},
+    extrusion: { label: 'Not extruding', steps: [
+      ['Unloaded and reloaded the filament', 'Use Unload / Load filament on the printer menu so the nozzle heats first; never pull cold filament out.'],
+      ['Checked the spool turns freely', 'No tangles, knots or crossed loops, and the filament isn\'t caught on the spool holder.'],
+      ['Cut the filament end before loading', 'Snip off any bent or swollen end at an angle with flush cutters.'],
+      ['Checked the filament is the right material and diameter', 'For example, 1.75 mm PLA loaded with the PLA profile selected.'],
+      ['Cleaned the outside of the nozzle', 'Heat the nozzle, then brush off burnt or stuck plastic with the brass brush. Don\'t use steel tools.'],
+      ['Cleared the nozzle opening', 'With the nozzle at printing temperature, push the nozzle cleaning needle up into the tip a few times, then try loading again.'],
+      ['Tried a cold pull', 'Heat to printing temp, push filament through by hand, let it cool to about 90 °C (PLA), then pull it out firmly. Repeat until the end comes out clean.'],
+      ['Checked the extruder gears for filament dust', 'Brush out shavings from the drive gear. Clicking or grinding usually means it\'s slipping.']
+    ]},
+    error: { label: 'Error message', steps: [
+      ['Wrote down the exact error text or code', 'Put it in the description, for example "Thermal runaway" or "Error E3".'],
+      ['Followed the simple fix the screen suggests', 'For example "Load filament", "Clean nozzle" or "Remove print from bed".'],
+      ['Restarted the printer', 'Only if nothing is printing: turn it off, wait 30 seconds, turn it back on.']
+    ]},
+    file: { label: 'File / connection', steps: [
+      ['Re-sliced the file with this printer\'s profile', 'A file sliced for a different model can refuse to start or print in the wrong place.'],
+      ['Re-copied the file and safely ejected the USB / SD card', 'Then reinserted it and checked the file appears on the printer.'],
+      ['Tried a known-good test file', 'If the test file prints, the problem is your file, not the printer.']
+    ]},
+    quality: { label: 'Print quality', steps: [
+      ['Used the lab\'s standard slicer profile for the material', 'Custom speed and temperature settings cause most quality problems.'],
+      ['Checked the filament is dry', 'Popping or hissing at the nozzle and lots of stringing usually mean wet filament.'],
+      ['Checked nothing blocks the print head', 'No loose parts, clips, tools or debris on the bed or rails.'],
+      ['Cleaned the nozzle tip', 'Heat the nozzle and brush off stuck plastic with the brass brush. Burnt blobs cause dark streaks and zits on prints.']
+    ]},
+    other: { label: 'Other', steps: [
+      ['Looked for something obvious', 'A loose print, a caught cable, or debris on the bed, rails or fan.'],
+      ['Cleared plastic buildup around the print head', 'With the printer off and cool, remove stringy plastic wrapped around the nozzle, fan duct or sensor.'],
+      ['Restarted the printer', 'Only if nothing is printing: turn it off, wait 30 seconds, turn it back on.'],
+      ['Described exactly what happens and when', 'For example, "grinding noise when the bed moves forward".']
+    ]},
+    safety: { label: 'SAFETY', safety: true, steps: [
+      ['I stopped the print and turned the printer off, if it was safe to do so', 'Do not touch the nozzle, bed or melted plastic. They can be over 200 °C.'],
+      ['I told lab staff or will tell them in person now', 'If there is fire or anyone is hurt, call 911 and leave the area.']
+    ]}
+  };
+
+  function sayReport(t, k){ const m = $('reportMsg'); m.textContent = t; m.className = 'msg ' + (k || ''); }
+
+  function openFixes(p, type, report){
+    const f = FIXES[type]; const dlg = $('fixDialog'); const body = $('fixBody');
+    body.replaceChildren(); body.className = 'dlg' + (f.safety ? ' safety' : '');
+    const boxes = [];
+    const count = h('span',{class:'count'});
+    const submit = h('button',{class:'btn danger', type:'button', disabled:true}, f.safety ? 'Report safety problem' : 'Submit report');
+    const update = () => {
+      const done = boxes.filter(b => b.checked).length;
+      count.textContent = done + ' of ' + boxes.length + ' checked';
+      submit.disabled = done < boxes.length;
+    };
+    const list = h('ul',{class:'steps'}, f.steps.map((s, i) => {
+      const id = 'fx-' + i;
+      const cb = h('input',{type:'checkbox', id, onchange: update}); boxes.push(cb);
+      return h('li',null, h('label',{class:'step', for:id}, cb, h('span',null, h('b',null, s[0]), h('small',null, s[1]))));
+    }));
+    body.append(
+      h('h3',{id:'fixTitle'}, f.safety ? 'Stop and get staff' : 'Before you report ' + p.name),
+      h('p',{class:'lede'}, f.safety
+        ? 'Safety problems skip the checklist. Confirm these, then submit so the printer is marked out of service.'
+        : 'Most problems are fixed by one of these. Check off each one you\'ve tried. If you\'re not sure how, ask lab staff before reporting.'),
+      list,
+      h('div',{class:'dlg-actions'}, count,
+        h('button',{class:'ghost', type:'button', onclick: () => dlg.close()}, 'Cancel'),
+        submit)
+    );
+    submit.addEventListener('click', async () => {
+      dlg.close();
+      const tried = f.safety ? '' : ' (basic fixes tried)';
+      await sendReport(p, { name: report.name, contact: report.contact, reason: (f.safety ? 'SAFETY: ' : f.label + ': ') + report.reason + tried });
+    });
+    update();
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open','');
+    boxes[0] && boxes[0].focus();
+  }
+
+  async function sendReport(p, report){
+    S.busy = true; sayReport('Saving…'); render();
     try {
       apply(await call('reportProblem', p.id, report));
-      say(p.name + ' is marked out of service. Thanks for reporting it.', 'ok');
-      $('r-reason').value = '';
+      sayReport(p.name + ' is marked out of service. Thanks for reporting it.', 'ok');
+      $('r-reason').value = ''; $('r-type').value = '';
       store.set('pq-name', report.name);
-    } catch(err){ say(errText(err), 'err'); }
+    } catch(err){ sayReport(errText(err), 'err'); }
     S.busy = false; render();
+  }
+
+  $('report').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const p = selPrinter(); if (!p || S.busy) return;
+    const type = $('r-type').value;
+    const report = { reason: $('r-reason').value.trim(), name: $('r-name').value.trim(), contact: $('f-contact').value.trim() };
+    if (!type) return sayReport('Choose the type of problem.', 'err');
+    if (!report.reason) return sayReport('Describe what\'s happening with the printer.', 'err');
+    if (!report.name) return sayReport('Enter your name so staff can follow up.', 'err');
+    sayReport('');
+    openFixes(p, type, report);
   });
 
   $('r-name').value = store.get('pq-name') || '';
