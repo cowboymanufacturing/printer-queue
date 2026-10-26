@@ -12,7 +12,7 @@
   --accent:#C2410C; --accent-ink:#FFFFFF; --accent-soft:#FDEEE6;
   --ok:#047857; --ok-soft:#E3F5EE; --busy:#B45309; --busy-soft:#FDF2E2;
   --u:#1D4ED8; --u-soft:#E6EDFD; --c:#7C3AED; --c-soft:#F0E9FD; --p:#047857; --p-soft:#E3F5EE;
-  --danger:#B91C1C;
+  --danger:#B91C1C; --danger-soft:#FDECEC;
   --display:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
   --body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
 }
@@ -21,14 +21,15 @@
   --accent:#F27A3D; --accent-ink:#16181D; --accent-soft:#3A2418;
   --ok:#34D399; --ok-soft:#14302A; --busy:#FBBF24; --busy-soft:#352A12;
   --u:#8AB0FF; --u-soft:#1C2A48; --c:#C4A3FF; --c-soft:#2C2142; --p:#5EE0AE; --p-soft:#15312A;
-  --danger:#F87171; color-scheme:dark}}
+  --danger:#F87171; --danger-soft:#3A1B1B; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#111317; --surface:#1A1D23; --ink:#ECEEF2; --muted:#A3AAB6; --line:#323742;
   --accent:#F27A3D; --accent-ink:#16181D; --accent-soft:#3A2418;
   --ok:#34D399; --ok-soft:#14302A; --busy:#FBBF24; --busy-soft:#352A12;
   --u:#8AB0FF; --u-soft:#1C2A48; --c:#C4A3FF; --c-soft:#2C2142; --p:#5EE0AE; --p-soft:#15312A;
-  --danger:#F87171; color-scheme:dark}
+  --danger:#F87171; --danger-soft:#3A1B1B; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
 .wrap{max-width:1120px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
 header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:4px solid var(--ink);padding-bottom:12px}
@@ -109,6 +110,16 @@ details.manage{font-size:15px}
 details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
 .mrow{display:flex;gap:8px;align-items:center;padding-top:8px}
 .mrow input{flex:1}
+.pill.down{color:var(--danger);background:var(--danger-soft)}
+.ptab.is-down{border-color:var(--danger)}
+.downbox{border:2px solid var(--danger);background:var(--danger-soft);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.downbox strong{font-family:var(--display);font-size:30px;line-height:1;text-transform:uppercase;color:var(--danger)}
+.downbox .reason{font-size:17px;font-weight:600;overflow-wrap:anywhere}
+textarea{font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:6px;padding:10px 12px;width:100%;min-width:0;resize:vertical}
+textarea:focus-visible{outline:none;border-color:var(--danger)}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:var(--accent-ink)}
+.linkish{background:none;border:0;padding:0;color:var(--muted);font-size:14px;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.linkish:hover{color:var(--danger)}
 @media (prefers-reduced-motion:no-preference){.bar span{transition:width .6s ease}}
 </style>
 <style>body{margin:0}</style>
@@ -163,6 +174,16 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
           </div>
           <button class="btn" type="submit" id="submitBtn" disabled>Join the queue</button>
           <div class="msg" id="formMsg" role="status"></div>
+        </form>
+      </section>
+      <section class="panel" id="reportPanel">
+        <h2 id="reportTitle">Report a problem</h2>
+        <p class="qsub" id="reportDownNote" style="margin:0" hidden>This printer is already marked out of service. Once it's working again, anyone can click “Mark as fixed” on the left.</p>
+        <form id="report" novalidate>
+          <div class="field"><label for="r-reason">What's wrong?</label><textarea id="r-reason" rows="3" maxlength="200" placeholder="e.g. nozzle clogged, bed won't heat, error on the screen"></textarea></div>
+          <div class="field"><label for="r-name">Your name</label><input type="text" id="r-name" autocomplete="name" maxlength="60"></div>
+          <button class="btn danger" type="submit" id="reportBtn" disabled>Mark out of service</button>
+          <div class="msg" id="reportMsg" role="status"></div>
         </form>
       </section>
       <p class="qsub" style="margin:0">Updates every 15 seconds. Your email is shown on the queue. Company and PO details go only to lab staff.</p>
@@ -246,11 +267,11 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
     if (!S.loaded){ nav.append(h('div',{class:'empty'},'Loading printers…')); return; }
     if (!S.printers.length){ nav.append(h('div',{class:'empty'},'No printers have been set up yet.')); return; }
     for (const p of S.printers){
-      const q = queueFor(p.id).length, busy = !!p.current;
-      nav.append(h('button', {class:'ptab', type:'button', 'aria-pressed': String(p.id === S.sel), onclick: () => { S.sel = p.id; store.set('pq-sel', p.id); render(); }},
+      const q = queueFor(p.id).length, busy = !!p.current, down = !!p.down;
+      nav.append(h('button', {class:'ptab' + (down ? ' is-down' : ''), type:'button', 'aria-pressed': String(p.id === S.sel), onclick: () => { S.sel = p.id; store.set('pq-sel', p.id); render(); }},
         h('span',{class:'pname'}, p.name),
-        h('span',{class:'pill ' + (busy ? 'busy' : 'free')}, busy ? 'In use' : 'Free'),
-        h('span',{class:'pmeta'}, busy ? (p.current.name + ' · until ' + fmtTime(p.current.finish)) : 'Nobody printing'),
+        h('span',{class:'pill ' + (down ? 'down' : busy ? 'busy' : 'free')}, down ? 'Out of service' : busy ? 'In use' : 'Free'),
+        h('span',{class:'pmeta'}, down ? p.down.reason : busy ? (p.current.name + ' · until ' + fmtTime(p.current.finish)) : 'Nobody printing'),
         h('span',{class:'pmeta'}, q ? q + ' waiting' : 'No line')
       ));
     }
@@ -262,9 +283,19 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
     if (!p){ box.append(h('h2',null,'Now printing'), h('div',{class:'empty'}, S.loaded ? 'Pick a printer above.' : 'Loading…')); return; }
     const c = p.current;
     box.append(h('h2', null, p.name + ' · Now printing'));
+    if (p.down){
+      box.append(h('div',{class:'downbox'},
+        h('strong',null,'Out of service'),
+        h('span',{class:'reason'}, p.down.reason),
+        h('span',{class:'qsub'}, 'Reported' + (p.down.by ? ' by ' + p.down.by : '') + (p.down.at ? ' · ' + fmtTime(p.down.at) : '') + '. Sign-ups are paused.'),
+        h('div',{class:'qact', style:'justify-content:flex-start'}, askConfirm('fix:' + p.id, 'Mark as fixed', () => act('markFixed', p.id)))
+      ));
+      if (!c) return;
+    }
+    const reportLink = p.down ? null : h('button',{class:'linkish', type:'button', onclick: () => { const r = $('r-reason'); r.scrollIntoView({behavior:'smooth', block:'center'}); r.focus({preventScroll:true}); }}, 'Something wrong with this printer? Report a problem');
     if (!c){
       const q = queueFor(p.id);
-      box.append(h('div',{class:'idle'}, h('strong',null,'Free'), h('span',{class:'empty'}, q.length ? q[0].name + ' is next in line and can start now.' : 'Nobody is using this printer. Sign up to start.')));
+      box.append(h('div',{class:'idle'}, h('strong',null,'Free'), h('span',{class:'empty'}, q.length ? q[0].name + ' is next in line and can start now.' : 'Nobody is using this printer. Sign up to start.')), reportLink);
       return;
     }
     const t = now(), total = Math.max(1, c.finish - c.start), pct = Math.min(100, Math.max(0, (t - c.start) / total * 100));
@@ -280,7 +311,8 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
       ),
       h('div',{class:'bar', role:'progressbar', 'aria-label':'Estimated progress', 'aria-valuemin':'0', 'aria-valuemax':'100', 'aria-valuenow': String(Math.round(pct))}, h('span',{style:'width:' + pct.toFixed(1) + '%'})),
       h('div',{class:'qsub'}, left > 0 ? 'About ' + fmtDur(left) + ' left' : 'Past its estimated finish — check the printer'),
-      h('div',{class:'qact', style:'justify-content:flex-start'}, askConfirm('finish:' + p.id, 'Print removed — free the printer', () => act('finishPrint', p.id)))
+      h('div',{class:'qact', style:'justify-content:flex-start'}, askConfirm('finish:' + p.id, 'Print removed — free the printer', () => act('finishPrint', p.id))),
+      reportLink
     );
   }
 
@@ -295,7 +327,7 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
     q.forEach((item, i) => {
       const startAt = t; t += item.minutes * 60000;
       const acts = [];
-      if (i === 0 && !p.current) acts.push(h('button',{class:'ghost go', type:'button', disabled:S.busy, onclick: () => act('startFromQueue', item.id)}, 'Start print'));
+      if (i === 0 && !p.current && !p.down) acts.push(h('button',{class:'ghost go', type:'button', disabled:S.busy, onclick: () => act('startFromQueue', item.id)}, 'Start print'));
       acts.push(askConfirm('rm:' + item.id, 'Leave line', () => act('leaveQueue', item.id)));
       list.append(h('li',{class:'qitem' + (i === 0 ? ' next' : '')},
         h('span',{class:'qpos', 'aria-label':'Position ' + (i+1)}, String(i+1)),
@@ -318,10 +350,16 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
     const p = selPrinter();
     const startNow = p && !p.current && !queueFor(p.id).length;
     $('formTitle').textContent = p ? 'Sign up · ' + p.name : 'Sign up';
-    $('submitBtn').textContent = startNow ? 'Start printing now' : 'Join the queue';
-    $('submitBtn').disabled = !p || S.busy;
+    $('submitBtn').textContent = p && p.down ? 'Out of service — pick another printer' : startNow ? 'Start printing now' : 'Join the queue';
+    $('submitBtn').disabled = !p || S.busy || !!(p && p.down);
     const src = document.querySelector('input[name=source]:checked');
     $('poField').hidden = !(src && src.value === 'company');
+    // report panel (a static form, so typing isn't lost when the page refreshes)
+    $('reportTitle').textContent = p ? 'Report a problem · ' + p.name : 'Report a problem';
+    const down = !!(p && p.down);
+    $('report').hidden = down;
+    $('reportDownNote').hidden = !down;
+    $('reportBtn').disabled = !p || S.busy;
   }
 
   function render(){
@@ -383,6 +421,25 @@ details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
     S.busy = false; render();
   });
 
+  $('report').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const p = selPrinter(); if (!p || S.busy) return;
+    const m = $('reportMsg');
+    const say = (t, k) => { m.textContent = t; m.className = 'msg ' + (k || ''); };
+    const report = { reason: $('r-reason').value.trim(), name: $('r-name').value.trim(), contact: $('f-contact').value.trim() };
+    if (!report.reason) return say('Describe what\'s wrong with the printer.', 'err');
+    if (!report.name) return say('Enter your name so staff can follow up.', 'err');
+    S.busy = true; say('Saving…'); render();
+    try {
+      apply(await call('reportProblem', p.id, report));
+      say(p.name + ' is marked out of service. Thanks for reporting it.', 'ok');
+      $('r-reason').value = '';
+      store.set('pq-name', report.name);
+    } catch(err){ say(errText(err), 'err'); }
+    S.busy = false; render();
+  });
+
+  $('r-name').value = store.get('pq-name') || '';
   $('f-name').value = store.get('pq-name') || '';
   $('f-contact').value = store.get('pq-contact') || '';
   S.sel = store.get('pq-sel');
