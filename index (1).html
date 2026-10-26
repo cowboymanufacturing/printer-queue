@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D Printer Queue</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: printer status strip on top, then "now printing" + queue beside a sign-up form; stacks on phones. */
+:root{
+  --bg:#F6F7F9; --surface:#FFFFFF; --ink:#16181D; --muted:#4B5563; --line:#D5D9E0;
+  --accent:#C2410C; --accent-ink:#FFFFFF; --accent-soft:#FDEEE6;
+  --ok:#047857; --ok-soft:#E3F5EE; --busy:#B45309; --busy-soft:#FDF2E2;
+  --u:#1D4ED8; --u-soft:#E6EDFD; --c:#7C3AED; --c-soft:#F0E9FD; --p:#047857; --p-soft:#E3F5EE;
+  --danger:#B91C1C;
+  --display:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
+  --body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111317; --surface:#1A1D23; --ink:#ECEEF2; --muted:#A3AAB6; --line:#323742;
+  --accent:#F27A3D; --accent-ink:#16181D; --accent-soft:#3A2418;
+  --ok:#34D399; --ok-soft:#14302A; --busy:#FBBF24; --busy-soft:#352A12;
+  --u:#8AB0FF; --u-soft:#1C2A48; --c:#C4A3FF; --c-soft:#2C2142; --p:#5EE0AE; --p-soft:#15312A;
+  --danger:#F87171; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111317; --surface:#1A1D23; --ink:#ECEEF2; --muted:#A3AAB6; --line:#323742;
+  --accent:#F27A3D; --accent-ink:#16181D; --accent-soft:#3A2418;
+  --ok:#34D399; --ok-soft:#14302A; --busy:#FBBF24; --busy-soft:#352A12;
+  --u:#8AB0FF; --u-soft:#1C2A48; --c:#C4A3FF; --c-soft:#2C2142; --p:#5EE0AE; --p-soft:#15312A;
+  --danger:#F87171; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
+.wrap{max-width:1120px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:4px solid var(--ink);padding-bottom:12px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{margin:4px 0 0;font-family:var(--display);font-weight:800;font-size:clamp(36px,6vw,52px);line-height:.95;text-transform:uppercase;text-wrap:balance}
+h2{margin:0;font-family:var(--display);font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em}
+.clock{font-family:var(--display);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.printers{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.ptab{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:6px;padding:14px 16px;background:var(--surface);border:2px solid var(--line);border-radius:8px;min-width:0}
+.ptab:hover{border-color:var(--muted)}
+.ptab:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.ptab[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 -5px 0 var(--accent)}
+.ptab .pname{font-family:var(--display);font-weight:800;font-size:24px;line-height:1;text-transform:uppercase;overflow-wrap:anywhere}
+.ptab .pmeta{font-size:14px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:4px}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.free{color:var(--ok);background:var(--ok-soft)}
+.pill.busy{color:var(--busy);background:var(--busy-soft)}
+.main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:820px){.main{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:24px;min-width:0}
+.panel{background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.now{border-color:var(--ink)}
+.now-name{font-family:var(--display);font-weight:800;font-size:clamp(30px,5vw,40px);line-height:1;overflow-wrap:anywhere}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.fact{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fact dt{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.fact dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.bar span{display:block;height:100%;background:var(--accent)}
+.idle{display:flex;flex-direction:column;gap:6px;padding:8px 0}
+.idle strong{font-family:var(--display);font-size:30px;text-transform:uppercase;color:var(--ok)}
+.chip{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.chip.university{color:var(--u);background:var(--u-soft)}
+.chip.company{color:var(--c);background:var(--c-soft)}
+.chip.personal{color:var(--p);background:var(--p-soft)}
+.qhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.qcount{font-size:14px;color:var(--muted)}
+ol.queue{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.qitem{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.qitem:first-child{border-top:0}
+.qpos{width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:800;font-size:20px;background:var(--bg);border:2px solid var(--line)}
+.qitem.next .qpos{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.qmain{display:flex;flex-direction:column;gap:4px;min-width:0}
+.qname{font-weight:700;font-size:17px;overflow-wrap:anywhere}
+.qsub{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.qact{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.empty{color:var(--muted);font-size:15px;padding:6px 0}
+form{display:flex;flex-direction:column;gap:14px}
+label,.legend{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+input[type=text],input[type=number]{font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:6px;padding:10px 12px;width:100%;min-width:0}
+input:focus-visible{outline:none;border-color:var(--accent)}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.sources{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.src{position:relative}
+.src input{position:absolute;opacity:0;inset:0}
+.src span{display:flex;flex-direction:column;gap:2px;padding:10px;border:2px solid var(--line);border-radius:6px;cursor:pointer;height:100%}
+.src b{font-family:var(--display);font-size:18px;text-transform:uppercase;letter-spacing:.02em;color:var(--ink)}
+.src small{font-size:12px;color:var(--muted);line-height:1.25;text-transform:none;letter-spacing:0;font-weight:500}
+.src input:checked + span{border-color:var(--ink);background:var(--accent-soft)}
+.src input:focus-visible + span{outline:3px solid var(--accent);outline-offset:2px}
+@media (max-width:420px){.sources{grid-template-columns:minmax(0,1fr)}}
+.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+button{font:inherit;cursor:pointer;border-radius:6px;font-weight:700}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn{background:var(--accent);color:var(--accent-ink);border:2px solid var(--accent);padding:12px 16px;font-family:var(--display);font-size:20px;text-transform:uppercase;letter-spacing:.04em}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.ghost{background:transparent;color:var(--ink);border:2px solid var(--line);padding:7px 12px;font-size:14px}
+.ghost:hover{border-color:var(--ink)}
+.ghost.warn{color:var(--danger);border-color:var(--danger)}
+.ghost.go{color:var(--ok);border-color:var(--ok)}
+.msg{font-size:14px;font-weight:600;min-height:1.2em}
+.msg.err{color:var(--danger)}
+.msg.ok{color:var(--ok)}
+.notice{background:var(--busy-soft);color:var(--ink);border:2px solid var(--busy);border-radius:8px;padding:12px 14px;font-size:15px}
+details.manage{font-size:15px}
+details.manage summary{cursor:pointer;font-weight:700;color:var(--muted)}
+.mrow{display:flex;gap:8px;align-items:center;padding-top:8px}
+.mrow input{flex:1}
+@media (prefers-reduced-motion:no-preference){.bar span{transition:width .6s ease}}
+</style>
+<style>body{margin:0}</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">[LAB NAME] · Additive Manufacturing Lab</div>
+      <h1>3D Printer Queue</h1>
+    </div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <nav class="printers" id="printers" aria-label="Printers">
+    <div class="empty">Loading printers…</div>
+  </nav>
+
+  <div class="main">
+    <div class="col">
+      <section class="panel now" id="now" aria-live="polite"></section>
+      <section class="panel" id="queuePanel">
+        <div class="qhead"><h2>Waiting in line</h2><span class="qcount" id="qcount"></span></div>
+        <ol class="queue" id="queue"></ol>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel">
+        <h2 id="formTitle">Sign up</h2>
+        <form id="signup" novalidate>
+          <div class="field"><label for="f-name">Your name</label><input type="text" id="f-name" autocomplete="name" maxlength="60"></div>
+          <div class="field"><label for="f-contact">Email</label><input type="text" id="f-contact" maxlength="80" autocomplete="email" placeholder="Shown on the queue so others can reach you"></div>
+          <fieldset>
+            <legend class="legend">Filament source</legend>
+            <div class="sources">
+              <label class="src"><input type="radio" name="source" value="university" id="s-u"><span><b>University</b><small>Lab stock</small></span></label>
+              <label class="src"><input type="radio" name="source" value="company" id="s-c"><span><b>Company</b><small>Sponsor-supplied or billed</small></span></label>
+              <label class="src"><input type="radio" name="source" value="personal" id="s-p"><span><b>Personal</b><small>Your own spool</small></span></label>
+            </div>
+          </fieldset>
+          <div class="field" id="poField" hidden><label for="f-po">Company name / PO #</label><input type="text" id="f-po" maxlength="80"></div>
+          <div class="field"><label for="f-material">Material / color</label><input type="text" id="f-material" maxlength="60" placeholder="e.g. PLA, black"></div>
+          <div class="field">
+            <span class="legend" id="durLabel">Estimated print time</span>
+            <div class="row2" role="group" aria-labelledby="durLabel">
+              <div class="field"><label for="f-h" style="font-size:12px">Hours</label><input type="number" id="f-h" min="0" max="168" step="1" inputmode="numeric" value="1"></div>
+              <div class="field"><label for="f-m" style="font-size:12px">Minutes</label><input type="number" id="f-m" min="0" max="59" step="5" inputmode="numeric" value="0"></div>
+            </div>
+          </div>
+          <button class="btn" type="submit" id="submitBtn" disabled>Join the queue</button>
+          <div class="msg" id="formMsg" role="status"></div>
+        </form>
+      </section>
+      <p class="qsub" style="margin:0">Updates every 15 seconds. Your email is shown on the queue. Company and PO details go only to lab staff.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const S = { printers:[], queue:[], sel:null, confirm:null, loaded:false, busy:false, skew:0 };
+  const $ = (id) => document.getElementById(id);
+  const LABEL = { university:'University', company:'Company', personal:'Personal' };
+  const now = () => Date.now() + S.skew;
+
+  function h(tag, attrs, ...kids){
+    const el = document.createElement(tag);
+    for (const k in (attrs||{})){
+      const v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of kids.flat()){ if (c == null || c === false) continue; el.append(c.nodeType ? c : document.createTextNode(String(c))); }
+    return el;
+  }
+  const store = {
+    get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+    set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+  };
+
+  // The Google Apps Script web app URL (Deploy → Manage deployments → Web app URL).
+  const API_URL = 'https://script.google.com/macros/s/AKfycbz1_T0iQzhujW-opfoBHdnk-ax8UHn8AAlL8UzKhCMRkaQ0CIYB9AqR36yvMTvmqRkOaA/exec';
+
+  async function call(fn, ...args){
+    let res;
+    try {
+      res = fn === 'getState'
+        ? await fetch(API_URL + '?action=state', { redirect: 'follow' })
+        // text/plain keeps this a "simple" request, which Apps Script accepts from another site
+        : await fetch(API_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: fn, args }) });
+    } catch (e) {
+      throw new Error('Can\'t reach the queue server. Check your connection.');
+    }
+    let data;
+    try { data = await res.json(); }
+    catch (e) { throw new Error('The queue server sent an unexpected reply. Staff: check the deployment is set to "Anyone".'); }
+    if (!data.ok) throw new Error(data.error || 'That didn\'t save. Try again.');
+    return data.state;
+  }
+  function errText(e){
+    const m = (e && e.message) || '';
+    return m.replace(/^Exception:\s*/, '') || 'That didn\'t save. Check your connection and try again.';
+  }
+
+  function fmtTime(ms){
+    const d = new Date(ms), n = new Date(now());
+    const t = d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    if (d.toDateString() === n.toDateString()) return t;
+    return d.toLocaleDateString([], {weekday:'short'}) + ' ' + t;
+  }
+  function fmtDur(min){
+    min = Math.max(0, Math.round(min));
+    const hh = Math.floor(min/60), mm = min % 60;
+    if (!hh) return mm + ' min';
+    return hh + ' h' + (mm ? ' ' + mm + ' min' : '');
+  }
+
+  function selPrinter(){ return S.printers.find(p => p.id === S.sel) || null; }
+  function queueFor(pid){ return S.queue.filter(q => q.printer === pid); }
+
+  function askConfirm(key, label, fn){
+    return h('button', {class:'ghost' + (S.confirm === key ? ' warn' : ''), type:'button', disabled: S.busy, onclick: () => {
+      if (S.confirm === key){ S.confirm = null; fn(); }
+      else { S.confirm = key; render(); setTimeout(() => { if (S.confirm === key){ S.confirm = null; render(); } }, 4000); }
+    }}, S.confirm === key ? 'Tap again to confirm' : label);
+  }
+
+  function renderPrinters(){
+    const nav = $('printers'); nav.replaceChildren();
+    if (!S.loaded){ nav.append(h('div',{class:'empty'},'Loading printers…')); return; }
+    if (!S.printers.length){ nav.append(h('div',{class:'empty'},'No printers have been set up yet.')); return; }
+    for (const p of S.printers){
+      const q = queueFor(p.id).length, busy = !!p.current;
+      nav.append(h('button', {class:'ptab', type:'button', 'aria-pressed': String(p.id === S.sel), onclick: () => { S.sel = p.id; store.set('pq-sel', p.id); render(); }},
+        h('span',{class:'pname'}, p.name),
+        h('span',{class:'pill ' + (busy ? 'busy' : 'free')}, busy ? 'In use' : 'Free'),
+        h('span',{class:'pmeta'}, busy ? (p.current.name + ' · until ' + fmtTime(p.current.finish)) : 'Nobody printing'),
+        h('span',{class:'pmeta'}, q ? q + ' waiting' : 'No line')
+      ));
+    }
+  }
+
+  function renderNow(){
+    const box = $('now'); box.replaceChildren();
+    const p = selPrinter();
+    if (!p){ box.append(h('h2',null,'Now printing'), h('div',{class:'empty'}, S.loaded ? 'Pick a printer above.' : 'Loading…')); return; }
+    const c = p.current;
+    box.append(h('h2', null, p.name + ' · Now printing'));
+    if (!c){
+      const q = queueFor(p.id);
+      box.append(h('div',{class:'idle'}, h('strong',null,'Free'), h('span',{class:'empty'}, q.length ? q[0].name + ' is next in line and can start now.' : 'Nobody is using this printer. Sign up to start.')));
+      return;
+    }
+    const t = now(), total = Math.max(1, c.finish - c.start), pct = Math.min(100, Math.max(0, (t - c.start) / total * 100));
+    const left = (c.finish - t) / 60000;
+    box.append(
+      h('div',{class:'now-name'}, c.name),
+      h('div',null, h('span',{class:'chip ' + c.source}, LABEL[c.source] || c.source)),
+      h('dl',{class:'facts'},
+        h('div',{class:'fact'}, h('dt',null,'Contact'), h('dd',null, c.contact || '—')),
+        h('div',{class:'fact'}, h('dt',null,'Material'), h('dd',null, c.material || '—')),
+        h('div',{class:'fact'}, h('dt',null,'Started'), h('dd',null, fmtTime(c.start))),
+        h('div',{class:'fact'}, h('dt',null,'Est. finish'), h('dd',null, fmtTime(c.finish)))
+      ),
+      h('div',{class:'bar', role:'progressbar', 'aria-label':'Estimated progress', 'aria-valuemin':'0', 'aria-valuemax':'100', 'aria-valuenow': String(Math.round(pct))}, h('span',{style:'width:' + pct.toFixed(1) + '%'})),
+      h('div',{class:'qsub'}, left > 0 ? 'About ' + fmtDur(left) + ' left' : 'Past its estimated finish — check the printer'),
+      h('div',{class:'qact', style:'justify-content:flex-start'}, askConfirm('finish:' + p.id, 'Print removed — free the printer', () => act('finishPrint', p.id)))
+    );
+  }
+
+  function renderQueue(){
+    const list = $('queue'); list.replaceChildren();
+    const p = selPrinter();
+    const q = p ? queueFor(p.id) : [];
+    $('qcount').textContent = q.length ? q.length + (q.length === 1 ? ' person' : ' people') : '';
+    if (!p) return;
+    if (!q.length){ list.append(h('li',{class:'empty'},'Nobody is waiting.')); return; }
+    let t = Math.max(now(), p.current ? p.current.finish : now());
+    q.forEach((item, i) => {
+      const startAt = t; t += item.minutes * 60000;
+      const acts = [];
+      if (i === 0 && !p.current) acts.push(h('button',{class:'ghost go', type:'button', disabled:S.busy, onclick: () => act('startFromQueue', item.id)}, 'Start print'));
+      acts.push(askConfirm('rm:' + item.id, 'Leave line', () => act('leaveQueue', item.id)));
+      list.append(h('li',{class:'qitem' + (i === 0 ? ' next' : '')},
+        h('span',{class:'qpos', 'aria-label':'Position ' + (i+1)}, String(i+1)),
+        h('div',{class:'qmain'},
+          h('span',{class:'qname'}, item.name),
+          h('span',{class:'qsub'},
+            h('span',{class:'chip ' + item.source}, LABEL[item.source] || item.source),
+            h('span',null, item.material || 'Material not given'),
+            h('span',null, fmtDur(item.minutes)),
+            h('span',null, (p.current || i > 0) ? 'Est. start ' + fmtTime(startAt) : 'Can start now')
+          ),
+          item.contact ? h('span',{class:'qsub'}, item.contact) : null
+        ),
+        h('div',{class:'qact'}, acts)
+      ));
+    });
+  }
+
+  function renderForm(){
+    const p = selPrinter();
+    const startNow = p && !p.current && !queueFor(p.id).length;
+    $('formTitle').textContent = p ? 'Sign up · ' + p.name : 'Sign up';
+    $('submitBtn').textContent = startNow ? 'Start printing now' : 'Join the queue';
+    $('submitBtn').disabled = !p || S.busy;
+    const src = document.querySelector('input[name=source]:checked');
+    $('poField').hidden = !(src && src.value === 'company');
+  }
+
+  function render(){
+    if (S.sel && !S.printers.some(p => p.id === S.sel)) S.sel = null;
+    if (!S.sel && S.printers.length) S.sel = S.printers[0].id;
+    renderPrinters(); renderNow(); renderQueue(); renderForm();
+  }
+
+  function apply(state){
+    S.printers = state.printers || [];
+    S.queue = state.queue || [];
+    if (state.serverNow) S.skew = state.serverNow - Date.now();
+    S.loaded = true;
+    $('notice').hidden = true;
+    render();
+  }
+
+  function flash(text, kind){ const m = $('formMsg'); m.textContent = text; m.className = 'msg ' + (kind || ''); }
+
+  async function refresh(){
+    if (S.busy) return;
+    try { apply(await call('getState')); }
+    catch(e){ $('notice').textContent = 'Can\'t reach the queue right now: ' + errText(e) + ' Retrying…'; $('notice').hidden = false; }
+  }
+
+  async function act(fn, arg){
+    S.busy = true; render();
+    try { apply(await call(fn, arg)); }
+    catch(e){ flash(errText(e), 'err'); }
+    S.busy = false; render();
+  }
+
+  $('signup').addEventListener('change', (e) => { if (e.target.name === 'source') renderForm(); });
+  $('signup').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const p = selPrinter(); if (!p || S.busy) return;
+    const srcEl = document.querySelector('input[name=source]:checked');
+    const entry = {
+      name: $('f-name').value.trim(),
+      contact: $('f-contact').value.trim(),
+      source: srcEl ? srcEl.value : '',
+      po: $('f-po').value.trim(),
+      material: $('f-material').value.trim(),
+      minutes: (parseInt($('f-h').value,10)||0)*60 + (parseInt($('f-m').value,10)||0)
+    };
+    if (!entry.name) return flash('Enter your name.', 'err');
+    if (!entry.contact) return flash('Enter your email so others can reach you.', 'err');
+    if (!entry.source) return flash('Pick where your filament comes from.', 'err');
+    if (entry.source === 'company' && !entry.po) return flash('Company filament needs a company name or PO number.', 'err');
+    if (entry.minutes < 5) return flash('Enter an estimated print time of at least 5 minutes.', 'err');
+    S.busy = true; flash('Saving…'); render();
+    try {
+      const state = await call('signUp', p.id, entry);
+      apply(state);
+      flash(state.started ? 'You\'re on ' + p.name + '. Stay for the first layer.' : 'You\'re in line for ' + p.name + '.', 'ok');
+      store.set('pq-name', entry.name); store.set('pq-contact', entry.contact);
+      $('f-po').value = ''; $('f-material').value = '';
+    } catch(err){ flash(errText(err), 'err'); }
+    S.busy = false; render();
+  });
+
+  $('f-name').value = store.get('pq-name') || '';
+  $('f-contact').value = store.get('pq-contact') || '';
+  S.sel = store.get('pq-sel');
+
+  function tick(){ $('clock').textContent = new Date(now()).toLocaleString([], {weekday:'short', hour:'numeric', minute:'2-digit'}); }
+  tick(); render(); refresh();
+  setInterval(() => { tick(); if (!S.busy){ renderNow(); renderQueue(); } }, 30000);
+  setInterval(() => { if (!document.hidden) refresh(); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+})();
+</script>
+
+</body>
+</html>
